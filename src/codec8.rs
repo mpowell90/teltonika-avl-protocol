@@ -101,7 +101,7 @@ impl TryFrom<u8> for Priority {
 
 #[derive(Clone, Debug)]
 pub struct AvlDataFrame {
-    pub timestamp: u64, /// a difference, in milliseconds, between the current time and midnight, January, 1970 UTC (UNIX time).
+    pub timestamp: u64, // a difference, in milliseconds, between the current time and midnight, January, 1970 UTC (UNIX time).
     pub priority: Priority,
     pub gps_element: AvlGpsElement,
     pub event_io_id: u8,
@@ -424,34 +424,35 @@ mod tests {
     use super::*;
 
     fn sample_frame_with_io() -> AvlDataFrame {
+        // example from https://wiki.teltonika-gps.com/view/Teltonika_AVL_Protocols#Codec_8 AVL Data Packet example section
         AvlDataFrame {
-            timestamp: 1_712_345_678_901,
+            timestamp: 0x000000016b40d8ea30,
             priority: Priority::Medium,
             gps_element: AvlGpsElement {
-                longitude: Coordinate(-122.4194),
-                latitude: Coordinate(37.7749),
-                altitude: 42,
-                angle: 123,
-                satellites: 7,
-                speed: 55,
+                longitude: Coordinate(0.0),
+                latitude: Coordinate(0.0),
+                altitude: 0,
+                angle: 0,
+                satellites: 0,
+                speed: 0,
             },
             event_io_id: 1,
             io_elements: vec![
                 AvlIoElement {
-                    id: 10,
-                    value: AvlIoElementValue::U8(5),
+                    id: 0x15,
+                    value: AvlIoElementValue::U8(0x03),
                 },
                 AvlIoElement {
-                    id: 20,
-                    value: AvlIoElementValue::U16(600),
+                    id: 0x42,
+                    value: AvlIoElementValue::U16(0x5e0f),
                 },
                 AvlIoElement {
-                    id: 30,
-                    value: AvlIoElementValue::U32(70_000),
+                    id: 0xf1,
+                    value: AvlIoElementValue::U32(0x0000601a),
                 },
                 AvlIoElement {
-                    id: 40,
-                    value: AvlIoElementValue::U64(9_000_000),
+                    id: 0x4e,
+                    value: AvlIoElementValue::U64(0x0),
                 },
             ],
         }
@@ -459,7 +460,7 @@ mod tests {
 
     fn sample_frame_without_io() -> AvlDataFrame {
         AvlDataFrame {
-            timestamp: 1_712_345_679_999,
+            timestamp: 0x000000016b40d8ea30,
             priority: Priority::Low,
             gps_element: AvlGpsElement {
                 longitude: Coordinate(10.1234),
