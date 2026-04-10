@@ -29,18 +29,21 @@ impl Codec8Packet {
         buf[offset] = self.avl_data_frames.len() as u8; // data_2_count
 
         let data_field_length = self.data_field_length() as usize;
-        let crc16_value = crc16(&buf[8..(8 + data_field_length)]);
 
-        buf[offset + 1..offset + 3].copy_from_slice(&crc16_value.to_be_bytes()); // CRC16
+        // The CRC16 is encoded into 4 bytes even though it's a 2 byte value. The upper 2 bytes will always be 0.
+        let crc16_value = crc16(&buf[8..(8 + data_field_length)]) as u32;
 
-        Ok(offset + 3)
+        buf[offset + 1..offset + 5].copy_from_slice(&crc16_value.to_be_bytes()); // CRC16
+
+        Ok(offset + 5)
     }
 
     pub fn decode(buf: &[u8]) -> Result<Self, AvlError> {
         let data_field_length = u32::from_be_bytes(buf[4..8].try_into().unwrap());
 
+        // The CRC16 is encoded into 4 bytes even though it's a 2 byte value. The upper 2 bytes will always be 0.
         let crc16_value = u16::from_be_bytes(
-            buf[(8 + data_field_length as usize)..(8 + data_field_length as usize + 2)]
+            buf[(10 + data_field_length as usize)..(10 + data_field_length as usize + 2)]
                 .try_into()
                 .unwrap(),
         );
@@ -480,7 +483,7 @@ mod tests {
         let mut buf = vec![0_u8; 256];
         let bytes_written = packet.encode(&mut buf).unwrap();
 
-        assert_eq!(bytes_written, 43);
+        assert_eq!(bytes_written, 45);
         assert_eq!(&buf[0..4], &[0, 0, 0, 0]);
         assert_eq!(u32::from_be_bytes(buf[4..8].try_into().unwrap()), 33);
         assert_eq!(buf[8], CODEC8_TYPE_ID);
@@ -488,7 +491,7 @@ mod tests {
         assert_eq!(buf[40], 1);
 
         let expected_crc = crc16(&buf[8..41]);
-        let actual_crc = u16::from_be_bytes(buf[41..43].try_into().unwrap());
+        let actual_crc = u16::from_be_bytes(buf[43..45].try_into().unwrap());
         assert_eq!(actual_crc, expected_crc);
     }
 
