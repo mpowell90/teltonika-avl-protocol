@@ -303,14 +303,26 @@ impl Coordinate {
     }
 }
 
+impl From<Coordinate> for f32 {
+    fn from(coordinate: Coordinate) -> Self {
+        coordinate.0
+    }
+}
+
+impl From<f32> for Coordinate {
+    fn from(value: f32) -> Self {
+        Coordinate(value)
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct AvlGpsElement {
-    pub longitude: Coordinate,
-    pub latitude: Coordinate,
-    pub altitude: i16,
-    pub angle: u16,
-    pub satellites: u8,
-    pub speed: u16,
+    pub longitude: Coordinate, // east-west position, in degrees
+    pub latitude: Coordinate, // north-south position, in degrees
+    pub altitude: i16, // meters above sea level
+    pub angle: u16, // Degrees from north pole
+    pub satellites: u8, // number of visible satellites
+    pub speed: u16, // km/h
 }
 
 impl AvlGpsElement {
