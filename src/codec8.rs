@@ -556,11 +556,9 @@ mod tests {
 
     #[test]
     fn decode_rejects_invalid_checksum() {
-        dbg!("t1");
         let packet = Codec8Packet {
             avl_data_records: Vec::from_slice(&[sample_frame_with_io()]).unwrap(),
         };
-        dbg!("t2");
 
         let mut encoded = [0_u8; 512];
         let encoded_len = packet.encode(&mut encoded).unwrap();
