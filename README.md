@@ -1,23 +1,24 @@
 <a id="readme-top"></a>
 
 <div align="center">
-  <h1 align="center">teletonika-avl-protocol</h3>
+  <h1 align="center">teltonika-avl-protocol</h3>
   <h3 align="center">
-    Teletonika AVL protocol written in Rust
+    Teltonika AVL protocol written in Rust
   </h3>
   <div align="center">
 
-[![Crates.io](https://img.shields.io/crates/v/teletonika-avl-protocol.svg)](https://crates.io/crates/teletonika-avl-protocol)
-[![Docs](https://img.shields.io/badge/docs-latest-blue)](https://docs.rs/teletonika-avl-protocol/latest/teletonika-avl-protocol/)
-[![Docs](https://img.shields.io/badge/msrv-1.81.0-red)](https://docs.rs/teletonika-avl-protocol/latest/teletonika-avl-protocol/)
+[![Crates.io](https://img.shields.io/crates/v/teltonika-avl-protocol.svg)](https://crates.io/crates/teltonika-avl-protocol)
+[![Docs](https://img.shields.io/badge/docs-latest-blue)](https://docs.rs/teltonika-avl-protocol/latest/teltonika-avl-protocol/)
+[![Docs](https://img.shields.io/badge/msrv-1.81.0-red)](https://docs.rs/teltonika-avl-protocol/latest/teltonika-avl-protocol/)
 
   </div>
 </div>
 
 ## About the project
 
-The AVL protocol defines a set of codecs which allow to the interfacing with a variety of teletonika vehicle tracking devices.
-Depending on the device feature set, codec packets can contain GPS data such as long / lat coordinates, angle of travel, altitude and current speed, as well as IO Event data such as Ignition On, and many more.
+The AVL protocol defines a set of codecs that enable interfacing with a variety of Teltonika vehicle tracking devices.
+
+Depending on the device feature set and physical configuration, codec packets can contain GPS data such as longitude/latitude coordinates, angle of travel, altitude, and current speed, as well as IO event data such as ignition status and more.
 
 ### Included
 
@@ -33,17 +34,17 @@ Depending on the device feature set, codec packets can contain GPS data such as 
 ### Installation
 
 ```sh
-cargo add teletonika-avl-protocol
+cargo add teltonika-avl-protocol
 ```
 
-or add to Cargo.toml dependencies, [crates.io](https://crates.io/crates/teletonika-avl-protocol) for latest version.
+or add to Cargo.toml dependencies, [crates.io](https://crates.io/crates/teltonika-avl-protocol) for latest version.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Codec8 packet handling
 
 ```rust
-use teletonika_avl_protocol::{
+use teltonika_avl_protocol::{
     StackVec,
     codec8::{
         AvlDataRecord, AvlGpsElement, AvlN1Element, AvlN2Element, AvlN4Element, AvlN8Element,
@@ -116,10 +117,11 @@ Distributed under the MIT License. See `LICENSE.txt` for more information.
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Acknowledgments
+This is an independent open-source project and is not an official Teltonika project, product, or repository.
 
-This is an independent open-source project and is not an official Teletonika project, product, or repository.
+The Teltonika name and the following specification are copyright of Teltonika IOT Group.
 
-Teletonika AVL Protocol specification: 
+Teltonika AVL Protocol specification:
 https://wiki.teltonika-gps.com/view/Teltonika_AVL_Protocols
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
