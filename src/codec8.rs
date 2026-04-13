@@ -1,11 +1,10 @@
-use crate::{crc16, error::AvlError};
-use heapless::Vec;
+use crate::{crc16, error::AvlError, StackVec};
 
 pub const CODEC8_TYPE_ID: u8 = 0x08;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Codec8Packet {
-    pub avl_data_records: Vec<AvlDataRecord, 4>,
+    pub avl_data_records: StackVec<AvlDataRecord, 4>,
 }
 
 impl Codec8Packet {
@@ -47,7 +46,7 @@ impl Codec8Packet {
         Ok(offset + 5)
     }
 
-    pub fn decode(buf: &[u8]) -> Result<Self, AvlError> {
+    pub fn decode(buf: &[u8]) -> Result<(usize, Self), AvlError> {
         let data_field_length = u32::from_be_bytes(buf[4..8].try_into().unwrap());
 
         // The CRC16 is encoded into 4 bytes even though it's a 2 byte value. The upper 2 bytes will always be 0.
@@ -75,7 +74,7 @@ impl Codec8Packet {
             });
         }
 
-        let mut avl_data_records = Vec::new();
+        let mut avl_data_records = StackVec::new();
         let mut offset = 10;
 
         for _ in 0..data_1_count {
@@ -84,21 +83,22 @@ impl Codec8Packet {
             offset += bytes_read;
         }
 
-        Ok(Self { avl_data_records })
+        // final offset + 1 byte for data_2_count + 4 bytes for CRC16
+        Ok((offset + 5, Self { avl_data_records }))
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AvlDataRecord {
     pub timestamp: u64, // a difference, in milliseconds, between the current time and midnight, January, 1970 UTC (UNIX time).
     pub priority: Priority,
     pub gps_element: AvlGpsElement,
     pub event_io_id: u8,
     pub total_io_count: u8,
-    pub n1_elements: Vec<AvlN1Element, 16>,
-    pub n2_elements: Vec<AvlN2Element, 16>,
-    pub n4_elements: Vec<AvlN4Element, 16>,
-    pub n8_elements: Vec<AvlN8Element, 16>,
+    pub n1_elements: StackVec<AvlN1Element, 16>,
+    pub n2_elements: StackVec<AvlN2Element, 16>,
+    pub n4_elements: StackVec<AvlN4Element, 16>,
+    pub n8_elements: StackVec<AvlN8Element, 16>,
 }
 
 impl AvlDataRecord {
@@ -191,7 +191,7 @@ impl AvlDataRecord {
         let n1_io_count = buf[offset];
         offset += 1;
 
-        let mut n1_elements = Vec::new();
+        let mut n1_elements = StackVec::new();
 
         if n1_io_count > 0 {
             let chunk_size: usize = 2;
@@ -209,7 +209,7 @@ impl AvlDataRecord {
         let n2_io_count = buf[offset];
         offset += 1;
 
-        let mut n2_elements = Vec::new();
+        let mut n2_elements = StackVec::new();
 
         if n2_io_count > 0 {
             let chunk_size: usize = 3;
@@ -227,7 +227,7 @@ impl AvlDataRecord {
         let n4_io_count = buf[offset];
         offset += 1;
 
-        let mut n4_elements = Vec::new();
+        let mut n4_elements = StackVec::new();
 
         if n4_io_count > 0 {
             let chunk_size: usize = 5;
@@ -245,7 +245,7 @@ impl AvlDataRecord {
         let n8_io_count = buf[offset];
         offset += 1;
 
-        let mut n8_elements = Vec::new();
+        let mut n8_elements = StackVec::new();
 
         if n8_io_count > 0 {
             let chunk_size: usize = 9;
@@ -277,7 +277,7 @@ impl AvlDataRecord {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Priority {
     Low = 0,
     Medium = 1,
@@ -297,7 +297,7 @@ impl TryFrom<u8> for Priority {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Coordinate(pub f32);
 
 impl Coordinate {
@@ -327,7 +327,7 @@ impl From<f32> for Coordinate {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct AvlGpsElement {
     pub longitude: Coordinate, // east-west position, in degrees
     pub latitude: Coordinate,  // north-south position, in degrees
@@ -366,7 +366,7 @@ impl AvlGpsElement {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct AvlN1Element {
     pub id: u8,
     pub value: u8,
@@ -387,7 +387,7 @@ impl AvlN1Element {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct AvlN2Element {
     pub id: u8,
     pub value: u16,
@@ -408,7 +408,7 @@ impl AvlN2Element {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct AvlN4Element {
     pub id: u8,
     pub value: u32,
@@ -429,7 +429,7 @@ impl AvlN4Element {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct AvlN8Element {
     pub id: u8,
     pub value: u64,
@@ -469,22 +469,22 @@ mod tests {
             },
             event_io_id: 1,
             total_io_count: 4,
-            n1_elements: Vec::from_slice(&[AvlN1Element {
+            n1_elements: StackVec::from_slice(&[AvlN1Element {
                 id: 0x15,
                 value: 0x03,
             }])
             .unwrap(),
-            n2_elements: Vec::from_slice(&[AvlN2Element {
+            n2_elements: StackVec::from_slice(&[AvlN2Element {
                 id: 0x42,
                 value: 0x5e0f,
             }])
             .unwrap(),
-            n4_elements: Vec::from_slice(&[AvlN4Element {
+            n4_elements: StackVec::from_slice(&[AvlN4Element {
                 id: 0xf1,
                 value: 0x0000601a,
             }])
             .unwrap(),
-            n8_elements: Vec::from_slice(&[AvlN8Element {
+            n8_elements: StackVec::from_slice(&[AvlN8Element {
                 id: 0x4e,
                 value: 0x0,
             }])
@@ -506,17 +506,17 @@ mod tests {
             },
             event_io_id: 2,
             total_io_count: 0,
-            n1_elements: Vec::new(),
-            n2_elements: Vec::new(),
-            n4_elements: Vec::new(),
-            n8_elements: Vec::new(),
+            n1_elements: StackVec::new(),
+            n2_elements: StackVec::new(),
+            n4_elements: StackVec::new(),
+            n8_elements: StackVec::new(),
         }
     }
 
     #[test]
     fn encodes_packet_header_and_crc_correctly() {
         let packet = Codec8Packet {
-            avl_data_records: Vec::from_slice(&[sample_frame_without_io()]).unwrap(),
+            avl_data_records: StackVec::from_slice(&[sample_frame_without_io()]).unwrap(),
         };
 
         let mut buf = [0_u8; 256];
@@ -537,14 +537,17 @@ mod tests {
     #[test]
     fn round_trip_encode_decode_preserves_payload() {
         let packet = Codec8Packet {
-            avl_data_records: Vec::from_slice(&[sample_frame_with_io(), sample_frame_without_io()])
-                .unwrap(),
+            avl_data_records: StackVec::from_slice(&[
+                sample_frame_with_io(),
+                sample_frame_without_io(),
+            ])
+            .unwrap(),
         };
 
         let mut encoded = [0_u8; 512];
         let encoded_len = packet.encode(&mut encoded).unwrap();
 
-        let decoded = Codec8Packet::decode(&encoded[..encoded_len]).unwrap();
+        let (bytes_decoded, decoded) = Codec8Packet::decode(&encoded[..encoded_len]).unwrap();
         assert_eq!(decoded.avl_data_records.len(), 2);
 
         let mut re_encoded = [0_u8; 512];
@@ -552,12 +555,13 @@ mod tests {
 
         assert_eq!(encoded_len, re_encoded_len);
         assert_eq!(&encoded[..encoded_len], &re_encoded[..re_encoded_len]);
+        assert_eq!(bytes_decoded, encoded_len);
     }
 
     #[test]
     fn decode_rejects_invalid_checksum() {
         let packet = Codec8Packet {
-            avl_data_records: Vec::from_slice(&[sample_frame_with_io()]).unwrap(),
+            avl_data_records: StackVec::from_slice(&[sample_frame_with_io()]).unwrap(),
         };
 
         let mut encoded = [0_u8; 512];

@@ -1,5 +1,5 @@
 [package]
-name = "teletonika-avl-protocol"
+name = "teltonika-avl-protocol"
 version = "0.1.0"
 edition = "2024"
 
