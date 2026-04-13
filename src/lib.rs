@@ -3,6 +3,8 @@
 pub mod codec8;
 pub mod error;
 
+pub use heapless::Vec as StackVec;
+
 // https://wiki.teltonika-gps.com/view/Codec#CRC-16
 pub fn crc16(msg: &[u8]) -> u16 {
     let mut crc: u16 = 0x0;
