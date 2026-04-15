@@ -9,7 +9,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/teltonika-avl-protocol.svg)](https://crates.io/crates/teltonika-avl-protocol)
 [![Docs](https://img.shields.io/badge/docs-latest-blue)](https://docs.rs/teltonika-avl-protocol/latest/teltonika-avl-protocol/)
-[![Docs](https://img.shields.io/badge/msrv-1.81.0-red)](https://docs.rs/teltonika-avl-protocol/latest/teltonika-avl-protocol/)
+[![Docs](https://img.shields.io/badge/msrv-1.87.0-red)](https://docs.rs/teltonika-avl-protocol/latest/teltonika-avl-protocol/)
 
   </div>
 </div>
@@ -23,6 +23,7 @@ Depending on the device feature set and physical configuration, codec packets ca
 ### Included
 
 - Data-types and functionality for encoding and decoding AVL Codec8 packets.
+- `no-std` compatible
 - Re-exports `Heapless::Vec` as `StackVec` to avoid polluting namespace incase your project uses `std`
 
 ### Implemented Codecs
