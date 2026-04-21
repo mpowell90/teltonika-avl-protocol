@@ -231,30 +231,6 @@ impl AvlIoElement for Codec8IoElement {
             }
         }
 
-        // for _ in 0..total_io_count {
-        //     let (bytes_read, n1_element) = AvlN1Element::decode(&buf[offset..])?;
-        //     n1_elements.push(n1_element).unwrap();
-        //     offset += bytes_read;
-        // }
-
-        // for _ in 0..total_io_count {
-        //     let (bytes_read, n2_element) = AvlN2Element::decode(&buf[offset..])?;
-        //     n2_elements.push(n2_element).unwrap();
-        //     offset += bytes_read;
-        // }
-
-        // for _ in 0..total_io_count {
-        //     let (bytes_read, n4_element) = AvlN4Element::decode(&buf[offset..])?;
-        //     n4_elements.push(n4_element).unwrap();
-        //     offset += bytes_read;
-        // }
-
-        // for _ in 0..total_io_count {
-        //     let (bytes_read, n8_element) = AvlN8Element::decode(&buf[offset..])?;
-        //     n8_elements.push(n8_element).unwrap();
-        //     offset += bytes_read;
-        // }
-
         Ok((
             offset,
             Self {
