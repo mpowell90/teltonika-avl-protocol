@@ -1,5 +1,4 @@
-use crate::{AvlCodec, error::AvlError};
-use heapless::Vec as StackVec;
+use crate::{AvlCodec, AvlIoElement, AvlIoId, error::AvlError};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct AvlUdpRequest<T: AvlCodec> {
@@ -19,7 +18,9 @@ impl<T: AvlCodec> AvlUdpRequest<T> {
         }
 
         // the packet length does not include the 2 bytes for the packet length
-        let packet_length = 3 + self.avl_packet_header.size() + self.avl_packet.size();
+        let packet_length =
+            u16::try_from(3 + self.avl_packet_header.size() + self.avl_packet.size())
+                .map_err(|_| AvlError::InvalidFrame)?;
 
         buf[0..2].copy_from_slice(&packet_length.to_be_bytes());
         buf[2..4].copy_from_slice(&self.packet_id.to_be_bytes());
@@ -149,24 +150,12 @@ pub struct AvlDataRecord<T> {
     pub timestamp: u64, // a difference, in milliseconds, between the current time and midnight, January, 1970 UTC (UNIX time).
     pub priority: Priority,
     pub gps_element: AvlGpsElement,
-    pub event_io_id: u8,
-    pub total_io_count: u8,
-    pub n1_elements: StackVec<AvlN1Element<T>, 16>,
-    pub n2_elements: StackVec<AvlN2Element<T>, 16>,
-    pub n4_elements: StackVec<AvlN4Element<T>, 16>,
-    pub n8_elements: StackVec<AvlN8Element<T>, 16>,
+    pub io_element: T,
 }
 
-impl<T: AvlIoId + core::fmt::Debug> AvlDataRecord<T> {
+impl<T: AvlIoElement> AvlDataRecord<T> {
     pub fn size(&self) -> usize {
-        let gps_element_size = 15; // 15 bytes for GPS element
-        let io_elements_size: usize = self.n1_elements.len() * 2
-            + self.n2_elements.len() * 3
-            + self.n4_elements.len() * 5
-            + self.n8_elements.len() * 9;
-
-        // timestamp + priority + GPS element + event IO ID + total IO count + N1/N2/N4/N8 group counts + IO elements
-        8 + 1 + gps_element_size + 1 + 1 + 4 + io_elements_size
+        AvlGpsElement::size() + self.io_element.size() + 9 // timestamp (8 bytes) + priority (1 byte)
     }
 
     pub fn encode(&self, buf: &mut [u8]) -> Result<usize, AvlError> {
@@ -174,58 +163,11 @@ impl<T: AvlIoId + core::fmt::Debug> AvlDataRecord<T> {
 
         buf[8] = self.priority as u8;
 
-        let mut offset = 9 + self.gps_element.encode(&mut buf[9..])?;
+        let mut offset = 9;
 
-        // IO Element
-        buf[offset] = self.event_io_id;
-        offset += 1;
+        offset += self.gps_element.encode(&mut buf[offset..])?;
 
-        // Total IO count
-        buf[offset] = self.n1_elements.len() as u8
-            + self.n2_elements.len() as u8
-            + self.n4_elements.len() as u8
-            + self.n8_elements.len() as u8;
-        offset += 1;
-
-        let n1_count = self.n1_elements.len();
-        buf[offset] = n1_count as u8;
-        offset += 1;
-
-        if n1_count > 0 {
-            for elem in &self.n1_elements {
-                offset += elem.encode(&mut buf[offset..])?;
-            }
-        }
-
-        let n2_count = self.n2_elements.len();
-        buf[offset] = n2_count as u8;
-        offset += 1;
-
-        if n2_count > 0 {
-            for elem in &self.n2_elements {
-                offset += elem.encode(&mut buf[offset..])?;
-            }
-        }
-
-        let n4_count = self.n4_elements.len();
-        buf[offset] = n4_count as u8;
-        offset += 1;
-
-        if n4_count > 0 {
-            for elem in &self.n4_elements {
-                offset += elem.encode(&mut buf[offset..])?;
-            }
-        }
-
-        let n8_count = self.n8_elements.len();
-        buf[offset] = n8_count as u8;
-        offset += 1;
-
-        if n8_count > 0 {
-            for elem in &self.n8_elements {
-                offset += elem.encode(&mut buf[offset..])?;
-            }
-        }
+        offset += self.io_element.encode(&mut buf[offset..])?;
 
         Ok(offset)
     }
@@ -233,88 +175,15 @@ impl<T: AvlIoId + core::fmt::Debug> AvlDataRecord<T> {
     pub fn decode(buf: &[u8]) -> Result<(usize, Self), AvlError> {
         let timestamp = u64::from_be_bytes(buf[0..8].try_into().unwrap());
         let priority = Priority::try_from(buf[8])?;
-        let gps_element = AvlGpsElement::decode(&buf[9..])?;
 
-        let mut offset = 9 + 15; // 15 bytes for GPS element
+        let mut offset = 9;
+        let (gps_element_offset, gps_element) = AvlGpsElement::decode(&buf[9..])?;
 
-        // IO Element
-        let event_io_id = buf[offset];
-        offset += 1;
+        offset += gps_element_offset;
 
-        let total_io_count = buf[offset];
-        offset += 1;
+        let (io_element_offset, io_element) = T::decode(&buf[offset..])?;
 
-        let n1_io_count = buf[offset];
-        offset += 1;
-
-        let mut n1_elements = StackVec::new();
-
-        if n1_io_count > 0 {
-            let chunk_size = AvlN1Element::<T>::size();
-            let stride = n1_io_count as usize * chunk_size;
-
-            for chunk in buf[offset..(offset + stride)].chunks(chunk_size) {
-                n1_elements
-                    .push(AvlN1Element::decode(chunk).unwrap())
-                    .unwrap();
-            }
-
-            offset += stride;
-        }
-
-        let n2_io_count = buf[offset];
-        offset += 1;
-
-        let mut n2_elements = StackVec::new();
-
-        if n2_io_count > 0 {
-            let chunk_size = AvlN2Element::<T>::size();
-            let stride = n2_io_count as usize * chunk_size;
-
-            for chunk in buf[offset..(offset + stride)].chunks(chunk_size) {
-                n2_elements
-                    .push(AvlN2Element::decode(chunk).unwrap())
-                    .unwrap();
-            }
-
-            offset += stride;
-        }
-
-        let n4_io_count = buf[offset];
-        offset += 1;
-
-        let mut n4_elements = StackVec::new();
-
-        if n4_io_count > 0 {
-            let chunk_size = AvlN4Element::<T>::size();
-            let stride = n4_io_count as usize * chunk_size;
-
-            for chunk in buf[offset..(offset + stride)].chunks(chunk_size) {
-                n4_elements
-                    .push(AvlN4Element::decode(chunk).unwrap())
-                    .unwrap();
-            }
-
-            offset += stride;
-        }
-
-        let n8_io_count = buf[offset];
-        offset += 1;
-
-        let mut n8_elements = StackVec::new();
-
-        if n8_io_count > 0 {
-            let chunk_size = AvlN8Element::<T>::size();
-            let stride = n8_io_count as usize * chunk_size;
-
-            for chunk in buf[offset..(offset + stride)].chunks(chunk_size) {
-                n8_elements
-                    .push(AvlN8Element::decode(chunk).unwrap())
-                    .unwrap();
-            }
-
-            offset += stride;
-        }
+        offset += io_element_offset;
 
         Ok((
             offset,
@@ -322,12 +191,7 @@ impl<T: AvlIoId + core::fmt::Debug> AvlDataRecord<T> {
                 timestamp,
                 priority,
                 gps_element,
-                event_io_id,
-                total_io_count,
-                n1_elements,
-                n2_elements,
-                n4_elements,
-                n8_elements,
+                io_element,
             },
         ))
     }
@@ -394,6 +258,10 @@ pub struct AvlGpsElement {
 }
 
 impl AvlGpsElement {
+    pub fn size() -> usize {
+        15
+    }
+
     pub fn encode(&self, buf: &mut [u8]) -> Result<usize, AvlError> {
         self.longitude.encode(&mut buf[0..4]);
 
@@ -410,26 +278,19 @@ impl AvlGpsElement {
         Ok(15)
     }
 
-    pub fn decode(buf: &[u8]) -> Result<Self, AvlError> {
-        Ok(Self {
-            longitude: Coordinate::decode(&buf[0..4]),
-            latitude: Coordinate::decode(&buf[4..8]),
-            altitude: i16::from_be_bytes(buf[8..10].try_into().unwrap()),
-            angle: u16::from_be_bytes(buf[10..12].try_into().unwrap()),
-            satellites: buf[12],
-            speed: u16::from_be_bytes(buf[13..15].try_into().unwrap()),
-        })
+    pub fn decode(buf: &[u8]) -> Result<(usize, Self), AvlError> {
+        Ok((
+            15,
+            Self {
+                longitude: Coordinate::decode(&buf[0..4]),
+                latitude: Coordinate::decode(&buf[4..8]),
+                altitude: i16::from_be_bytes(buf[8..10].try_into().unwrap()),
+                angle: u16::from_be_bytes(buf[10..12].try_into().unwrap()),
+                satellites: buf[12],
+                speed: u16::from_be_bytes(buf[13..15].try_into().unwrap()),
+            },
+        ))
     }
-}
-
-pub trait AvlIoId {
-    fn size() -> usize;
-
-    fn encode(&self, buf: &mut [u8]) -> Result<usize, AvlError>;
-
-    fn decode(buf: &[u8]) -> Result<(usize, Self), AvlError>
-    where
-        Self: Sized;
 }
 
 impl AvlIoId for u8 {
@@ -479,12 +340,15 @@ impl<T: AvlIoId> AvlN1Element<T> {
         Ok(offset + 1)
     }
 
-    pub fn decode(buf: &[u8]) -> Result<Self, AvlError> {
+    pub fn decode(buf: &[u8]) -> Result<(usize, Self), AvlError> {
         let (offset, id) = T::decode(buf)?;
-        Ok(Self {
-            id,
-            value: buf[offset],
-        })
+        Ok((
+            offset + 1,
+            Self {
+                id,
+                value: buf[offset],
+            },
+        ))
     }
 }
 
@@ -505,12 +369,15 @@ impl<T: AvlIoId> AvlN2Element<T> {
         Ok(offset + 2)
     }
 
-    pub fn decode(buf: &[u8]) -> Result<Self, AvlError> {
+    pub fn decode(buf: &[u8]) -> Result<(usize, Self), AvlError> {
         let (offset, id) = T::decode(buf)?;
-        Ok(Self {
-            id,
-            value: u16::from_be_bytes(buf[offset..offset + 2].try_into().unwrap()),
-        })
+        Ok((
+            offset + 2,
+            Self {
+                id,
+                value: u16::from_be_bytes(buf[offset..offset + 2].try_into().unwrap()),
+            },
+        ))
     }
 }
 
@@ -531,12 +398,15 @@ impl<T: AvlIoId> AvlN4Element<T> {
         Ok(offset + 4)
     }
 
-    pub fn decode(buf: &[u8]) -> Result<Self, AvlError> {
+    pub fn decode(buf: &[u8]) -> Result<(usize, Self), AvlError> {
         let (offset, id) = T::decode(buf)?;
-        Ok(Self {
-            id,
-            value: u32::from_be_bytes(buf[offset..offset + 4].try_into().unwrap()),
-        })
+        Ok((
+            offset + 4,
+            Self {
+                id,
+                value: u32::from_be_bytes(buf[offset..offset + 4].try_into().unwrap()),
+            },
+        ))
     }
 }
 
@@ -557,11 +427,14 @@ impl<T: AvlIoId> AvlN8Element<T> {
         Ok(offset + 8)
     }
 
-    pub fn decode(buf: &[u8]) -> Result<Self, AvlError> {
+    pub fn decode(buf: &[u8]) -> Result<(usize, Self), AvlError> {
         let (offset, id) = T::decode(buf)?;
-        Ok(Self {
-            id,
-            value: u64::from_be_bytes(buf[offset..offset + 8].try_into().unwrap()),
-        })
+        Ok((
+            offset + 8,
+            Self {
+                id,
+                value: u64::from_be_bytes(buf[offset..offset + 8].try_into().unwrap()),
+            },
+        ))
     }
 }

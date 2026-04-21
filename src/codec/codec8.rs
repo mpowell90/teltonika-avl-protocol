@@ -1,28 +1,26 @@
-use crate::{AvlCodec, StackVec, avl::AvlDataRecord, crc16, error::AvlError};
+use crate::{
+    AvlCodec, AvlIoElement, StackVec,
+    avl::{AvlDataRecord, AvlN1Element, AvlN2Element, AvlN4Element, AvlN8Element},
+    crc16,
+    error::AvlError,
+};
 
 pub const CODEC8_TYPE_ID: u8 = 0x08;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Codec8Packet(pub StackVec<AvlDataRecord<u8>, 4>);
+pub struct Codec8Packet(pub StackVec<AvlDataRecord<Codec8IoElement>, 4>);
 
 impl AvlCodec for Codec8Packet {
     fn size(&self) -> usize {
-        4 + 4
-            + 1
-            + 1
-            + self.0
-                .iter()
-                .map(|f| f.size())
-                .sum::<usize>()
-            + 1
-            + 4
-        // preamble + data_field_length + codec_id + data_1_count + data_2_count + avl_data_records + CRC16
+        self.0.iter().map(|f| f.size()).sum::<usize>() + 15 // preamble + data_field_length + codec_id + data_1_count + data_2_count + avl_data_records + CRC16
     }
 
     fn encode(&self, buf: &mut [u8]) -> Result<usize, AvlError> {
         buf[0..4].copy_from_slice(&[0, 0, 0, 0]); // Preamble
 
-        buf[4..8].copy_from_slice(&self.data_field_length().to_be_bytes());
+        let data_field_length = self.size() - 12; // without preamble and data_field_length and CRC16
+
+        buf[4..8].copy_from_slice(&(data_field_length as u32).to_be_bytes());
 
         buf[8] = CODEC8_TYPE_ID;
 
@@ -35,8 +33,6 @@ impl AvlCodec for Codec8Packet {
         }
 
         buf[offset] = self.0.len() as u8; // data_2_count
-
-        let data_field_length = self.data_field_length() as usize;
 
         // The CRC16 is encoded into 4 bytes even though it's a 2 byte value. The upper 2 bytes will always be 0.
         let crc16_value = crc16(&buf[8..(8 + data_field_length)]) as u32;
@@ -88,16 +84,188 @@ impl AvlCodec for Codec8Packet {
     }
 }
 
-impl Codec8Packet {
-    pub const MIN_LENGTH: usize = 45;
-    pub const MAX_LENGTH: usize = 1280;
+#[derive(Clone, Debug, PartialEq)]
+pub struct Codec8IoElement {
+    pub event_io_id: u8,
+    pub total_io_count: u8,
+    pub n1_elements: StackVec<AvlN1Element<u8>, 16>,
+    pub n2_elements: StackVec<AvlN2Element<u8>, 16>,
+    pub n4_elements: StackVec<AvlN4Element<u8>, 16>,
+    pub n8_elements: StackVec<AvlN8Element<u8>, 16>,
+}
 
-    pub fn data_field_length(&self) -> u32 {
-        self.0
-            .iter()
-            .map(|f| f.size())
-            .sum::<usize>() as u32
-            + 3 // codec_id + data_1_count + data_2_count
+impl AvlIoElement for Codec8IoElement {
+    fn size(&self) -> usize {
+        6 + (self.n1_elements.len() * AvlN1Element::<u8>::size())
+            + (self.n2_elements.len() * AvlN2Element::<u8>::size())
+            + (self.n4_elements.len() * AvlN4Element::<u8>::size())
+            + (self.n8_elements.len() * AvlN8Element::<u8>::size())
+    }
+
+    fn encode(&self, buf: &mut [u8]) -> Result<usize, AvlError> {
+        buf[0] = self.event_io_id;
+        buf[1] = self.total_io_count;
+
+        let mut offset = 0;
+
+        buf[offset] = self.event_io_id;
+        offset += 1;
+
+        // Total IO count
+        buf[offset] = self.total_io_count;
+        offset += 1;
+
+        let n1_count = self.n1_elements.len();
+        buf[offset] = n1_count as u8;
+        offset += 1;
+
+        if n1_count > 0 {
+            for elem in &self.n1_elements {
+                offset += elem.encode(&mut buf[offset..])?;
+            }
+        }
+
+        let n2_count = self.n2_elements.len();
+        buf[offset] = n2_count as u8;
+        offset += 1;
+
+        if n2_count > 0 {
+            for elem in &self.n2_elements {
+                offset += elem.encode(&mut buf[offset..])?;
+            }
+        }
+
+        let n4_count = self.n4_elements.len();
+        buf[offset] = n4_count as u8;
+        offset += 1;
+
+        if n4_count > 0 {
+            for elem in &self.n4_elements {
+                offset += elem.encode(&mut buf[offset..])?;
+            }
+        }
+
+        let n8_count = self.n8_elements.len();
+        buf[offset] = n8_count as u8;
+        offset += 1;
+
+        if n8_count > 0 {
+            for elem in &self.n8_elements {
+                offset += elem.encode(&mut buf[offset..])?;
+            }
+        }
+
+        Ok(offset)
+    }
+
+    fn decode(buf: &[u8]) -> Result<(usize, Self), AvlError> {
+        let mut offset = 0;
+
+        let event_io_id = buf[offset];
+        offset += 1;
+
+        let total_io_count = buf[offset];
+        offset += 1;
+
+        let n1_io_count = buf[offset];
+        offset += 1;
+
+        let mut n1_elements = StackVec::new();
+
+        if n1_io_count > 0 {
+            let chunk_size = AvlN1Element::<u8>::size();
+            let stride = n1_io_count as usize * chunk_size;
+
+            for chunk in buf[offset..(offset + stride)].chunks(chunk_size) {
+                let (bytes_read, n1_element) = AvlN1Element::decode(chunk)?;
+                n1_elements.push(n1_element).unwrap();
+                offset += bytes_read;
+            }
+        }
+
+        let n2_io_count = buf[offset];
+        offset += 1;
+
+        let mut n2_elements = StackVec::new();
+
+        if n2_io_count > 0 {
+            let chunk_size = AvlN2Element::<u8>::size();
+            let stride = n2_io_count as usize * chunk_size;
+
+            for chunk in buf[offset..(offset + stride)].chunks(chunk_size) {
+                let (bytes_read, n2_element) = AvlN2Element::decode(chunk)?;
+                n2_elements.push(n2_element).unwrap();
+                offset += bytes_read;
+            }
+        }
+
+        let n4_io_count = buf[offset];
+        offset += 1;
+
+        let mut n4_elements = StackVec::new();
+
+        if n4_io_count > 0 {
+            let chunk_size = AvlN4Element::<u8>::size();
+            let stride = n4_io_count as usize * chunk_size;
+
+            for chunk in buf[offset..(offset + stride)].chunks(chunk_size) {
+                let (bytes_read, n4_element) = AvlN4Element::decode(chunk)?;
+                n4_elements.push(n4_element).unwrap();
+                offset += bytes_read;
+            }
+        }
+
+        let n8_io_count = buf[offset];
+        offset += 1;
+
+        let mut n8_elements = StackVec::new();
+
+        if n8_io_count > 0 {
+            let chunk_size = AvlN8Element::<u8>::size();
+            let stride = n8_io_count as usize * chunk_size;
+
+            for chunk in buf[offset..(offset + stride)].chunks(chunk_size) {
+                let (bytes_read, n8_element) = AvlN8Element::decode(chunk)?;
+                n8_elements.push(n8_element).unwrap();
+                offset += bytes_read;
+            }
+        }
+
+        // for _ in 0..total_io_count {
+        //     let (bytes_read, n1_element) = AvlN1Element::decode(&buf[offset..])?;
+        //     n1_elements.push(n1_element).unwrap();
+        //     offset += bytes_read;
+        // }
+
+        // for _ in 0..total_io_count {
+        //     let (bytes_read, n2_element) = AvlN2Element::decode(&buf[offset..])?;
+        //     n2_elements.push(n2_element).unwrap();
+        //     offset += bytes_read;
+        // }
+
+        // for _ in 0..total_io_count {
+        //     let (bytes_read, n4_element) = AvlN4Element::decode(&buf[offset..])?;
+        //     n4_elements.push(n4_element).unwrap();
+        //     offset += bytes_read;
+        // }
+
+        // for _ in 0..total_io_count {
+        //     let (bytes_read, n8_element) = AvlN8Element::decode(&buf[offset..])?;
+        //     n8_elements.push(n8_element).unwrap();
+        //     offset += bytes_read;
+        // }
+
+        Ok((
+            offset,
+            Self {
+                event_io_id,
+                total_io_count,
+                n1_elements,
+                n2_elements,
+                n4_elements,
+                n8_elements,
+            },
+        ))
     }
 }
 
@@ -106,7 +274,7 @@ mod tests {
     use super::*;
     use crate::avl::*;
 
-    fn sample_frame_with_io() -> AvlDataRecord<u8> {
+    fn example1() -> AvlDataRecord<Codec8IoElement> {
         // example from https://wiki.teltonika-gps.com/view/Teltonika_AVL_Protocols#Codec_8 AVL Data Packet example section
         AvlDataRecord {
             timestamp: 0x000000016b40d8ea30,
@@ -119,32 +287,328 @@ mod tests {
                 satellites: 0,
                 speed: 0,
             },
-            event_io_id: 1,
-            total_io_count: 4,
-            n1_elements: StackVec::from_slice(&[AvlN1Element {
-                id: 0x15,
-                value: 0x03,
-            }])
-            .unwrap(),
-            n2_elements: StackVec::from_slice(&[AvlN2Element {
-                id: 0x42,
-                value: 0x5e0f,
-            }])
-            .unwrap(),
-            n4_elements: StackVec::from_slice(&[AvlN4Element {
-                id: 0xf1,
-                value: 0x0000601a,
-            }])
-            .unwrap(),
-            n8_elements: StackVec::from_slice(&[AvlN8Element {
-                id: 0x4e,
-                value: 0x0,
-            }])
-            .unwrap(),
+            io_element: Codec8IoElement {
+                event_io_id: 1,
+                total_io_count: 5,
+                n1_elements: StackVec::from_slice(&[
+                    AvlN1Element {
+                        id: 0x15,
+                        value: 0x03,
+                    },
+                    AvlN1Element {
+                        id: 0x01,
+                        value: 0x01,
+                    },
+                ])
+                .unwrap(),
+                n2_elements: StackVec::from_slice(&[AvlN2Element {
+                    id: 0x42,
+                    value: 0x5e0f,
+                }])
+                .unwrap(),
+                n4_elements: StackVec::from_slice(&[AvlN4Element {
+                    id: 0xf1,
+                    value: 0x601a,
+                }])
+                .unwrap(),
+                n8_elements: StackVec::from_slice(&[AvlN8Element {
+                    id: 0x4e,
+                    value: 0x00,
+                }])
+                .unwrap(),
+            },
         }
     }
 
-    fn sample_frame_without_io() -> AvlDataRecord<u8> {
+    #[test]
+    fn should_encode_decode_example1_codec8_packet() {
+        let mut buf = [0_u8; 256];
+
+        let packet = Codec8Packet(StackVec::from_slice(&[example1()]).unwrap());
+        let bytes_encoded = packet.encode(&mut buf).unwrap();
+
+        assert_eq!(
+            &buf[0..bytes_encoded],
+            &[
+                0, 0, 0, 0, // Preamble
+                0, 0, 0, 0x36, // Data field length
+                8,    // Codec ID
+                1,    // Data 1 count
+                0x00, 0x00, 0x01, 0x6b, 0x40, 0xd8, 0xea, 0x30, // Timestamp
+                1,    // Priority
+                0, 0, 0, 0, // GPS element - Longitude
+                0, 0, 0, 0, // GPS element - Latitude
+                0, 0, // GPS element - Altitude
+                0, 0, // GPS element - Angle
+                0, // GPS element - Satellites
+                0, 0,    // GPS element - Speed
+                1,    // Event IO ID
+                5,    // Total IO count
+                2,    // N1 elements count
+                0x15, // N1 element 1 ID
+                3,    // N1 element 1 value
+                1,    // N1 element 2 ID
+                1,    // N1 element 2 value
+                1,    // N2 element count
+                0x42, // N2 element ID
+                0x5e, 0x0f, // N2 element value
+                1,    // N4 element count
+                0xf1, // N4 element ID
+                0x00, 0x00, 0x60, 0x1a, // N4 element value
+                1,    // N8 element count
+                0x4e, // N8 element ID
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // N8 element value
+                1,    // Data 2 count
+                0, 0, 0xc7, 0xcf // CRC16
+            ]
+        );
+
+        let (bytes_decoded, decoded_packet) = Codec8Packet::decode(&buf[..bytes_encoded]).unwrap();
+        assert_eq!(bytes_encoded, bytes_decoded);
+
+        assert_eq!(packet, decoded_packet);
+    }
+
+    fn example2() -> AvlDataRecord<Codec8IoElement> {
+        // example from https://wiki.teltonika-gps.com/view/Teltonika_AVL_Protocols#Codec_8 AVL Data Packet example section
+        AvlDataRecord {
+            timestamp: 0x000000016b40d9ad80,
+            priority: Priority::Medium,
+            gps_element: AvlGpsElement {
+                longitude: Coordinate(0.0),
+                latitude: Coordinate(0.0),
+                altitude: 0,
+                angle: 0,
+                satellites: 0,
+                speed: 0,
+            },
+            io_element: Codec8IoElement {
+                event_io_id: 1,
+                total_io_count: 3,
+                n1_elements: StackVec::from_slice(&[
+                    AvlN1Element {
+                        id: 0x15,
+                        value: 0x03,
+                    },
+                    AvlN1Element {
+                        id: 0x01,
+                        value: 0x01,
+                    },
+                ])
+                .unwrap(),
+                n2_elements: StackVec::from_slice(&[AvlN2Element {
+                    id: 0x42,
+                    value: 0x5e10,
+                }])
+                .unwrap(),
+                n4_elements: StackVec::new(),
+                n8_elements: StackVec::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn should_encode_decode_example2_codec8_packet() {
+        let mut buf = [0_u8; 256];
+
+        let packet = Codec8Packet(StackVec::from_slice(&[example2()]).unwrap());
+        let bytes_encoded = packet.encode(&mut buf).unwrap();
+
+        assert_eq!(
+            &buf[0..bytes_encoded],
+            &[
+                0, 0, 0, 0, // Preamble
+                0, 0, 0, 0x28, // Data field length
+                8,    // Codec ID
+                1,    // Data 1 count
+                0x00, 0x00, 0x01, 0x6b, 0x40, 0xd9, 0xad, 0x80, // Timestamp
+                1,    // Priority
+                0, 0, 0, 0, // GPS element - Longitude
+                0, 0, 0, 0, // GPS element - Latitude
+                0, 0, // GPS element - Altitude
+                0, 0, // GPS element - Angle
+                0, // GPS element - Satellites
+                0, 0,    // GPS element - Speed
+                1,    // Event IO ID
+                3,    // Total IO count
+                2,    // N1 elements count
+                0x15, // N1 element 1 ID
+                3,    // N1 element 1 value
+                1,    // N1 element 2 ID
+                1,    // N1 element 2 value
+                1,    // N2 element count
+                0x42, // N2 element ID
+                0x5e, 0x10, // N2 element value
+                0,    // N4 element count
+                0,    // N8 element count
+                1,    // Data 2 count
+                0, 0, 0xf2, 0x2a // CRC16
+            ]
+        );
+
+        let (bytes_decoded, decoded_packet) = Codec8Packet::decode(&buf[..bytes_encoded]).unwrap();
+        assert_eq!(bytes_encoded, bytes_decoded);
+
+        assert_eq!(packet, decoded_packet);
+    }
+
+    fn example3() -> Codec8Packet {
+        // example from https://wiki.teltonika-gps.com/view/Teltonika_AVL_Protocols#Codec_8 AVL Data Packet example section
+        Codec8Packet(
+            StackVec::from_slice(&[
+                AvlDataRecord {
+                    timestamp: 0x000000016b40d57b48,
+                    priority: Priority::Medium,
+                    gps_element: AvlGpsElement {
+                        longitude: Coordinate(0.0),
+                        latitude: Coordinate(0.0),
+                        altitude: 0,
+                        angle: 0,
+                        satellites: 0,
+                        speed: 0,
+                    },
+                    io_element: Codec8IoElement {
+                        event_io_id: 1,
+                        total_io_count: 1,
+                        n1_elements: StackVec::from_slice(&[AvlN1Element {
+                            id: 0x01,
+                            value: 0x00,
+                        }])
+                        .unwrap(),
+                        n2_elements: StackVec::new(),
+                        n4_elements: StackVec::new(),
+                        n8_elements: StackVec::new(),
+                    },
+                },
+                AvlDataRecord {
+                    timestamp: 0x000000016b40d5c198,
+                    priority: Priority::Medium,
+                    gps_element: AvlGpsElement {
+                        longitude: Coordinate(0.0),
+                        latitude: Coordinate(0.0),
+                        altitude: 0,
+                        angle: 0,
+                        satellites: 0,
+                        speed: 0,
+                    },
+                    io_element: Codec8IoElement {
+                        event_io_id: 1,
+                        total_io_count: 1,
+                        n1_elements: StackVec::from_slice(&[AvlN1Element {
+                            id: 0x01,
+                            value: 0x01,
+                        }])
+                        .unwrap(),
+                        n2_elements: StackVec::new(),
+                        n4_elements: StackVec::new(),
+                        n8_elements: StackVec::new(),
+                    },
+                },
+            ])
+            .unwrap(),
+        )
+    }
+
+    #[test]
+    fn should_encode_decode_example3_codec8_packet() {
+        let mut buf = [0_u8; 256];
+
+        let packet = example3();
+        let bytes_encoded = packet.encode(&mut buf).unwrap();
+
+        assert_eq!(
+            &buf[0..bytes_encoded],
+            &[
+                0, 0, 0, 0, // Preamble
+                0, 0, 0, 0x43, // Data field length
+                8,    // Codec ID
+                2,    // Data 1 count
+                // Record 1
+                0x00, 0x00, 0x01, 0x6b, 0x40, 0xd5, 0x7b, 0x48, // Timestamp
+                1,    // Priority
+                0, 0, 0, 0, // GPS element - Longitude
+                0, 0, 0, 0, // GPS element - Latitude
+                0, 0, // GPS element - Altitude
+                0, 0, // GPS element - Angle
+                0, // GPS element - Satellites
+                0, 0, // GPS element - Speed
+                1, // Event IO ID
+                1, // Total IO count
+                1, // N1 elements count
+                1, // N1 element 1 ID
+                0, // N1 element 1 value
+                0, // N2 element count
+                0, // N4 element count
+                0, // N8 element count
+                // Record 2
+                0x00, 0x00, 0x01, 0x6b, 0x40, 0xd5, 0xc1, 0x98, // Timestamp
+                1,    // Priority
+                0, 0, 0, 0, // GPS element - Longitude
+                0, 0, 0, 0, // GPS element - Latitude
+                0, 0, // GPS element - Altitude
+                0, 0, // GPS element - Angle
+                0, // GPS element - Satellites
+                0, 0, // GPS element - Speed
+                1, // Event IO ID
+                1, // Total IO count
+                1, // N1 elements count
+                1, // N1 element 1 ID
+                1, // N1 element 1 value
+                0, // N2 element count
+                0, // N4 element count
+                0, // N8 element count
+                2, // Data 2 count
+                0, 0, 0x25, 0x2c // CRC16
+            ]
+        );
+
+        let (bytes_decoded, decoded_packet) = Codec8Packet::decode(&buf[..bytes_encoded]).unwrap();
+        assert_eq!(bytes_encoded, bytes_decoded);
+
+        assert_eq!(packet, decoded_packet);
+    }
+
+    fn sample_frame_with_io() -> AvlDataRecord<Codec8IoElement> {
+        // example from https://wiki.teltonika-gps.com/view/Teltonika_AVL_Protocols#Codec_8 AVL Data Packet example section
+        AvlDataRecord {
+            timestamp: 0x000000016b40d8ea30,
+            priority: Priority::Medium,
+            gps_element: AvlGpsElement {
+                longitude: Coordinate(0.0),
+                latitude: Coordinate(0.0),
+                altitude: 0,
+                angle: 0,
+                satellites: 0,
+                speed: 0,
+            },
+            io_element: Codec8IoElement {
+                event_io_id: 1,
+                total_io_count: 4,
+                n1_elements: StackVec::from_slice(&[AvlN1Element {
+                    id: 0x15,
+                    value: 0x03,
+                }])
+                .unwrap(),
+                n2_elements: StackVec::from_slice(&[AvlN2Element {
+                    id: 0x42,
+                    value: 0x5e0f,
+                }])
+                .unwrap(),
+                n4_elements: StackVec::from_slice(&[AvlN4Element {
+                    id: 0xf1,
+                    value: 0x0000601a,
+                }])
+                .unwrap(),
+                n8_elements: StackVec::from_slice(&[AvlN8Element {
+                    id: 0x4e,
+                    value: 0x0,
+                }])
+                .unwrap(),
+            },
+        }
+    }
+
+    fn sample_frame_without_io() -> AvlDataRecord<Codec8IoElement> {
         AvlDataRecord {
             timestamp: 0x000000016b40d8ea30,
             priority: Priority::Low,
@@ -156,18 +620,21 @@ mod tests {
                 satellites: 5,
                 speed: 22,
             },
-            event_io_id: 2,
-            total_io_count: 0,
-            n1_elements: StackVec::new(),
-            n2_elements: StackVec::new(),
-            n4_elements: StackVec::new(),
-            n8_elements: StackVec::new(),
+            io_element: Codec8IoElement {
+                event_io_id: 2,
+                total_io_count: 0,
+                n1_elements: StackVec::new(),
+                n2_elements: StackVec::new(),
+                n4_elements: StackVec::new(),
+                n8_elements: StackVec::new(),
+            },
         }
     }
 
     #[test]
     fn encodes_packet_header_and_crc_correctly() {
         let packet = Codec8Packet(StackVec::from_slice(&[sample_frame_without_io()]).unwrap());
+        dbg!(&packet);
 
         let mut buf = [0_u8; 256];
         let bytes_written = packet.encode(&mut buf).unwrap();
@@ -186,11 +653,9 @@ mod tests {
 
     #[test]
     fn round_trip_encode_decode_preserves_payload() {
-        let packet = Codec8Packet(StackVec::from_slice(&[
-            sample_frame_with_io(),
-            sample_frame_without_io(),
-        ])
-        .unwrap());
+        let packet = Codec8Packet(
+            StackVec::from_slice(&[sample_frame_with_io(), sample_frame_without_io()]).unwrap(),
+        );
 
         let mut encoded = [0_u8; 512];
         let encoded_len = packet.encode(&mut encoded).unwrap();

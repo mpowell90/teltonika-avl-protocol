@@ -1,7 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
-pub mod codec;
 pub mod avl;
+pub mod codec;
 pub mod error;
 
 pub use heapless::Vec as StackVec;
@@ -29,6 +29,26 @@ pub fn crc16(msg: &[u8]) -> u16 {
 
 pub trait AvlCodec {
     fn size(&self) -> usize;
+
+    fn encode(&self, buf: &mut [u8]) -> Result<usize, error::AvlError>;
+
+    fn decode(buf: &[u8]) -> Result<(usize, Self), error::AvlError>
+    where
+        Self: Sized;
+}
+
+pub trait AvlIoElement {
+    fn size(&self) -> usize;
+
+    fn encode(&self, buf: &mut [u8]) -> Result<usize, error::AvlError>;
+
+    fn decode(buf: &[u8]) -> Result<(usize, Self), error::AvlError>
+    where
+        Self: Sized;
+}
+
+pub trait AvlIoId {
+    fn size() -> usize;
 
     fn encode(&self, buf: &mut [u8]) -> Result<usize, error::AvlError>;
 
