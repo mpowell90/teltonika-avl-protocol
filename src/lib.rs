@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
-pub mod codec8;
+pub mod codec;
+pub mod avl;
 pub mod error;
 
 pub use heapless::Vec as StackVec;
@@ -24,4 +25,14 @@ pub fn crc16(msg: &[u8]) -> u16 {
     }
 
     crc
+}
+
+pub trait AvlCodec {
+    fn size(&self) -> usize;
+
+    fn encode(&self, buf: &mut [u8]) -> Result<usize, error::AvlError>;
+
+    fn decode(buf: &[u8]) -> Result<(usize, Self), error::AvlError>
+    where
+        Self: Sized;
 }
