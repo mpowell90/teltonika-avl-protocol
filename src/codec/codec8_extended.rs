@@ -8,7 +8,7 @@ use crate::{
 pub const CODEC8_EXTENDED_TYPE_ID: u8 = 0x8e;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Codec8ExtendedPacket(pub StackVec<AvlDataRecord<Codec8ExtendedIoElement>, 4>);
+pub struct Codec8ExtendedPacket(pub StackVec<AvlDataRecord<Codec8ExtendedIoElement>, 32>);
 
 impl AvlCodec for Codec8ExtendedPacket {
     fn size(&self) -> usize {
