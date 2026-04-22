@@ -438,3 +438,43 @@ impl<T: AvlIoId> AvlN8Element<T> {
         ))
     }
 }
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct AvlNxElement<T> {
+    pub id: T,
+    pub len: u16,
+    pub value: u64,
+}
+
+impl<T: AvlIoId> AvlNxElement<T> {
+    pub fn size(&self) -> usize {
+        T::size() + 2 + self.len as usize
+    }
+
+    pub fn encode(&self, buf: &mut [u8]) -> Result<usize, AvlError> {
+        let offset = self.id.encode(buf)?;
+        buf[offset..offset + 8].copy_from_slice(&self.value.to_be_bytes());
+        Ok(offset + 8)
+    }
+
+    pub fn decode(buf: &[u8]) -> Result<(usize, Self), AvlError> {
+        let (mut offset, id) = T::decode(buf)?;
+
+        let len = u16::from_be_bytes(buf[offset..offset + 2].try_into().unwrap());
+
+        offset += 2;
+
+        let value = u64::from_be_bytes(buf[offset..offset + len as usize].try_into().unwrap());
+
+        offset += len as usize;
+
+        Ok((
+            offset,
+            Self {
+                id,
+                len, 
+                value,
+            },
+        ))
+    }
+}
