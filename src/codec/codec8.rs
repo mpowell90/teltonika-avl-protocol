@@ -111,7 +111,6 @@ impl AvlIoElement for Codec8IoElement {
         buf[offset] = self.event_io_id;
         offset += 1;
 
-        // Total IO count
         buf[offset] = self.total_io_count;
         offset += 1;
 
@@ -119,40 +118,32 @@ impl AvlIoElement for Codec8IoElement {
         buf[offset] = n1_count as u8;
         offset += 1;
 
-        if n1_count > 0 {
-            for elem in &self.n1_elements {
-                offset += elem.encode(&mut buf[offset..])?;
-            }
+        for elem in &self.n1_elements {
+            offset += elem.encode(&mut buf[offset..])?;
         }
 
         let n2_count = self.n2_elements.len();
         buf[offset] = n2_count as u8;
         offset += 1;
 
-        if n2_count > 0 {
-            for elem in &self.n2_elements {
-                offset += elem.encode(&mut buf[offset..])?;
-            }
+        for elem in &self.n2_elements {
+            offset += elem.encode(&mut buf[offset..])?;
         }
 
         let n4_count = self.n4_elements.len();
         buf[offset] = n4_count as u8;
         offset += 1;
 
-        if n4_count > 0 {
-            for elem in &self.n4_elements {
-                offset += elem.encode(&mut buf[offset..])?;
-            }
+        for elem in &self.n4_elements {
+            offset += elem.encode(&mut buf[offset..])?;
         }
 
         let n8_count = self.n8_elements.len();
         buf[offset] = n8_count as u8;
         offset += 1;
 
-        if n8_count > 0 {
-            for elem in &self.n8_elements {
-                offset += elem.encode(&mut buf[offset..])?;
-            }
+        for elem in &self.n8_elements {
+            offset += elem.encode(&mut buf[offset..])?;
         }
 
         Ok(offset)
@@ -172,15 +163,10 @@ impl AvlIoElement for Codec8IoElement {
 
         let mut n1_elements = StackVec::new();
 
-        if n1_io_count > 0 {
-            let chunk_size = AvlN1Element::<u8>::size();
-            let stride = n1_io_count as usize * chunk_size;
-
-            for chunk in buf[offset..(offset + stride)].chunks(chunk_size) {
-                let (bytes_read, n1_element) = AvlN1Element::decode(chunk)?;
-                n1_elements.push(n1_element).unwrap();
-                offset += bytes_read;
-            }
+        for _ in 0..n1_io_count {
+            let (bytes_read, n1_element) = AvlN1Element::decode(&buf[offset..])?;
+            n1_elements.push(n1_element).unwrap();
+            offset += bytes_read;
         }
 
         let n2_io_count = buf[offset];
@@ -188,15 +174,10 @@ impl AvlIoElement for Codec8IoElement {
 
         let mut n2_elements = StackVec::new();
 
-        if n2_io_count > 0 {
-            let chunk_size = AvlN2Element::<u8>::size();
-            let stride = n2_io_count as usize * chunk_size;
-
-            for chunk in buf[offset..(offset + stride)].chunks(chunk_size) {
-                let (bytes_read, n2_element) = AvlN2Element::decode(chunk)?;
-                n2_elements.push(n2_element).unwrap();
-                offset += bytes_read;
-            }
+        for _ in 0..n2_io_count {
+            let (bytes_read, n2_element) = AvlN2Element::decode(&buf[offset..])?;
+            n2_elements.push(n2_element).unwrap();
+            offset += bytes_read;
         }
 
         let n4_io_count = buf[offset];
@@ -204,15 +185,10 @@ impl AvlIoElement for Codec8IoElement {
 
         let mut n4_elements = StackVec::new();
 
-        if n4_io_count > 0 {
-            let chunk_size = AvlN4Element::<u8>::size();
-            let stride = n4_io_count as usize * chunk_size;
-
-            for chunk in buf[offset..(offset + stride)].chunks(chunk_size) {
-                let (bytes_read, n4_element) = AvlN4Element::decode(chunk)?;
-                n4_elements.push(n4_element).unwrap();
-                offset += bytes_read;
-            }
+        for _ in 0..n4_io_count {
+            let (bytes_read, n4_element) = AvlN4Element::decode(&buf[offset..])?;
+            n4_elements.push(n4_element).unwrap();
+            offset += bytes_read;
         }
 
         let n8_io_count = buf[offset];
@@ -220,15 +196,10 @@ impl AvlIoElement for Codec8IoElement {
 
         let mut n8_elements = StackVec::new();
 
-        if n8_io_count > 0 {
-            let chunk_size = AvlN8Element::<u8>::size();
-            let stride = n8_io_count as usize * chunk_size;
-
-            for chunk in buf[offset..(offset + stride)].chunks(chunk_size) {
-                let (bytes_read, n8_element) = AvlN8Element::decode(chunk)?;
-                n8_elements.push(n8_element).unwrap();
-                offset += bytes_read;
-            }
+        for _ in 0..n8_io_count {
+            let (bytes_read, n8_element) = AvlN8Element::decode(&buf[offset..])?;
+            n8_elements.push(n8_element).unwrap();
+            offset += bytes_read;
         }
 
         Ok((
